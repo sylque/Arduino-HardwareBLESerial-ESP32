@@ -1,40 +1,77 @@
 #include "HardwareBLESerial.h"
 
+#include <BLE2902.h>
+#include <BLEDevice.h>
+
 HardwareBLESerial::HardwareBLESerial() {
   this->numAvailableLines = 0;
   this->transmitBufferLength = 0;
   this->lastFlushTime = 0;
 }
 
+HardwareBLESerial::~HardwareBLESerial() { this->end(); }
+
 bool HardwareBLESerial::beginAndSetupBLE(const char *name) {
-  if (!BLE.begin()) { return false; }
-  BLE.setLocalName(name);
-  BLE.setDeviceName(name);
+  BLEDevice::init(name);
   this->begin();
-  BLE.advertise();
   return true;
 }
 
 void HardwareBLESerial::begin() {
-  BLE.setAdvertisedService(uartService);
-  uartService.addCharacteristic(receiveCharacteristic);
-  uartService.addCharacteristic(transmitCharacteristic);
-  receiveCharacteristic.setEventHandler(BLEWritten, HardwareBLESerial::onBLEWritten);
-  BLE.addService(uartService);
+  // Create the server
+  this->uartServer = BLEDevice::createServer();
+  this->uartServer->setCallbacks(this);
+
+  // Create the UART service
+  this->uartService =
+      uartServer->createService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+
+  // Create the RX charac
+  this->receiveCharacteristic =
+      uartService->createCharacteristic("6E400002-B5A3-F393-E0A9-E50E24DCCA9E",
+                                        BLECharacteristic::PROPERTY_WRITE_NR);
+  receiveCharacteristic->setCallbacks(this);
+
+  // Create the TX charac. IMPORTANT: it should have the BLE2902 descriptor
+  this->transmitCharacteristic =
+      uartService->createCharacteristic("6E400003-B5A3-F393-E0A9-E50E24DCCA9E",
+                                        BLECharacteristic::PROPERTY_NOTIFY);
+  static BLE2902 s_ble2902;
+  this->transmitCharacteristic->addDescriptor(&s_ble2902);
+
+  // Start the service
+  this->uartService->start();
+
+  // Advertise. IMPORTANT: also advertizing the Uart service is required for the
+  // Bluefruit Connect app to list the device as "Uart capable" (notice that
+  // advertizing the Uart service is *not* required for the app to be able to
+  // connect to the device and use all Uart features)
+  BLEDevice::getAdvertising()->addServiceUUID(this->uartService->getUUID());
+  BLEDevice::startAdvertising();
 }
 
 void HardwareBLESerial::poll() {
   if (millis() - this->lastFlushTime > 100) {
     flush();
   } else {
-    BLE.poll();
+    // BLE.poll();
   }
 }
 
 void HardwareBLESerial::end() {
-  this->receiveCharacteristic.setEventHandler(BLEWritten, NULL);
-  this->receiveBuffer.clear();
+  if (this->receiveCharacteristic) {
+    this->receiveCharacteristic->setCallbacks(nullptr);
+  }
   flush();
+  this->receiveBuffer.clear();
+  delete uartServer;
+  uartServer = nullptr;
+  delete uartService;
+  uartService = nullptr;
+  delete receiveCharacteristic;
+  receiveCharacteristic = nullptr;
+  delete transmitCharacteristic;
+  transmitCharacteristic = nullptr;
 }
 
 size_t HardwareBLESerial::available() {
@@ -55,24 +92,25 @@ int HardwareBLESerial::read() {
 }
 
 size_t HardwareBLESerial::write(uint8_t byte) {
-  if (this->transmitCharacteristic.subscribed() == false) {
-    return 0;
-  }
+  // if (this->transmitCharacteristic->subscribed() == false) {
+  //   return 0;
+  // }
   this->transmitBuffer[this->transmitBufferLength] = byte;
   this->transmitBufferLength ++;
   if (this->transmitBufferLength == sizeof(this->transmitBuffer)) {
-      flush();
+    flush();
   }
   return 1;
 }
 
 void HardwareBLESerial::flush() {
   if (this->transmitBufferLength > 0) {
-    this->transmitCharacteristic.setValue(this->transmitBuffer, this->transmitBufferLength);
+    this->transmitCharacteristic->setValue(this->transmitBuffer, this->transmitBufferLength);
     this->transmitBufferLength = 0;
+    this->transmitCharacteristic->notify();
   }
   this->lastFlushTime = millis();
-  BLE.poll();
+  // BLE.poll();
 }
 
 size_t HardwareBLESerial::availableLines() {
@@ -116,9 +154,9 @@ size_t HardwareBLESerial::readLine(char *buffer, size_t bufferSize) {
 }
 
 size_t HardwareBLESerial::print(const char *str) {
-  if (this->transmitCharacteristic.subscribed() == false) {
-    return 0;
-  }
+  // if (this->transmitCharacteristic->subscribed() == false) {
+  //   return 0;
+  // }
   size_t written = 0;
   for (size_t i = 0; str[i] != '\0'; i ++) {
     written += this->write(str[i]);
@@ -152,7 +190,7 @@ size_t HardwareBLESerial::print(double value) {
 size_t HardwareBLESerial::println(double value) { return this->print(value) + this->write('\n'); }
 
 HardwareBLESerial::operator bool() {
-  return BLE.connected();
+  return this->uartServer ? this->uartServer->getConnectedCount() > 0 : false;
 }
 
 void HardwareBLESerial::onReceive(const uint8_t* data, size_t size) {
@@ -164,6 +202,10 @@ void HardwareBLESerial::onReceive(const uint8_t* data, size_t size) {
   }
 }
 
-void HardwareBLESerial::onBLEWritten(BLEDevice central, BLECharacteristic characteristic) {
-  HardwareBLESerial::getInstance().onReceive(characteristic.value(), characteristic.valueLength());
+void HardwareBLESerial::onWrite(BLECharacteristic *characteristic) {
+  this->onReceive(characteristic->getData(), characteristic->getLength());
+}
+
+void HardwareBLESerial::onDisconnect(BLEServer *pServer) {
+  BLEDevice::startAdvertising();
 }
