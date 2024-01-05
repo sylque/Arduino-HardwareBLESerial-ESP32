@@ -189,6 +189,66 @@ size_t HardwareBLESerial::print(double value) {
 }
 size_t HardwareBLESerial::println(double value) { return this->print(value) + this->write('\n'); }
 
+bool HardwareBLESerial::availableCmds() {
+  return this->peek() == '!';
+}
+
+// Returns an empty string if error
+std::string HardwareBLESerial::readCmd() {
+  if (!this->availableCmds()) {
+    return "";
+  }
+  
+  char buf[30];
+
+  // Get the command start character
+  buf[0] = this->read();
+  
+  // Get the command character
+  buf[1] = this->read();
+
+  // Get the payload size
+  int payloadSize = 0;
+  switch (buf[1]) {
+    // Quaternion
+    case 'Q':
+      payloadSize = 4 * 4;
+      break;
+    // Accelerometer
+    // Gyro
+    // Magnetometer
+    // Location
+    case 'A':
+    case 'G':
+    case 'M':
+    case 'L':
+      payloadSize = 3 * 4;
+      break;
+    // Control pad
+    case 'B':
+      payloadSize = 2;
+      break;
+    default:
+      return "";
+  }
+  
+  // Read the payload and the CRC
+  for (int i = 0; i < payloadSize + 1; ++i) {
+    buf[i + 2] = this->read();
+  }
+
+  // Check the crc
+  uint8_t sum = 0;
+  for (int i = 0; i < payloadSize + 2; ++i) {
+    sum += buf[i];
+  }
+  if (buf[payloadSize + 2] != (uint8_t)~sum) {
+    return "";
+  }
+
+  return buf;
+}
+
 HardwareBLESerial::operator bool() {
   return this->uartServer ? this->uartServer->getConnectedCount() > 0 : false;
 }
