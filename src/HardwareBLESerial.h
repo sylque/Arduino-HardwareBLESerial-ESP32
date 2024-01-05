@@ -83,6 +83,9 @@ class HardwareBLESerial : private BLECharacteristicCallbacks, private BLEServerC
   size_t print(double value);
   size_t println(double value);
 
+  bool availableCmds();
+  std::string readCmd();
+
   operator bool();
 
   // Return the time since last flush, in ms
