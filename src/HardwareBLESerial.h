@@ -8,8 +8,7 @@ An Arduino library for Nordic Semiconductors' proprietary "UART/Serial Port Emul
 Tested using UART console feature in [Adafruit Bluefruit LE Connect](https://apps.apple.com/at/app/adafruit-bluefruit-le-connect/id830125974).
 */
 
-#ifndef __BLE_SERIAL_H__
-#define __BLE_SERIAL_H__
+#pragma once
 
 #include <Arduino.h>
 #include <BLEServer.h>
@@ -113,5 +112,3 @@ class HardwareBLESerial : private BLECharacteristicCallbacks, private BLEServerC
   virtual void onWrite(BLECharacteristic* characteristic) override;
   virtual void onDisconnect(BLEServer* pServer) override;
 };
-
-#endif
