@@ -85,6 +85,12 @@ class HardwareBLESerial : private BLECharacteristicCallbacks, private BLEServerC
   size_t println(double value);
 
   operator bool();
+
+  // Return the time since last flush, in ms
+  unsigned long timeSinceLastFlushMs() const {
+    return millis() - this->lastFlushTime;
+  }
+
  private:
   HardwareBLESerial();
   HardwareBLESerial(HardwareBLESerial const &other) = delete;  // disable copy constructor
