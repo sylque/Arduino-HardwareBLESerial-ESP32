@@ -87,6 +87,9 @@ class HardwareBLESerial : private BLECharacteristicCallbacks, private BLEServerC
   std::string readCmd();
 
   // Returns true if at least one Master/Central/Client is connected to us
+  // This might *not* be the same behavior as the bool() operator in the 
+  // original repo, which might return true whenever any Master *or* Peripheral
+  // is connected.
   operator bool();
 
   // Return the time since last flush, in ms
