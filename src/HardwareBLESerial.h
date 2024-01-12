@@ -97,6 +97,9 @@ class HardwareBLESerial : private BLECharacteristicCallbacks, private BLEServerC
     return millis() - this->lastFlushTime;
   }
 
+  // SYL
+  BLEServer* getServer() { return this->uartServer; }
+
  private:
   HardwareBLESerial();
   HardwareBLESerial(HardwareBLESerial const &other) = delete;  // disable copy constructor
