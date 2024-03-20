@@ -66,6 +66,9 @@ void HardwareBLESerial::end() {
   this->receiveBuffer.clear();
   delete uartServer;
   uartServer = nullptr;
+  if (uartService) {
+    uartService->stop();
+  }  
   delete uartService;
   uartService = nullptr;
   delete receiveCharacteristic;
@@ -249,6 +252,7 @@ std::string HardwareBLESerial::readCmd() {
   return buf;
 }
 
+// Returns true if at least one device is connected, as master or slave
 HardwareBLESerial::operator bool() {
   return this->uartServer ? this->uartServer->getConnectedCount() > 0 : false;
 }
