@@ -6,6 +6,10 @@ An Arduino library for Nordic Semiconductors' proprietary "UART/Serial Port Emul
 * https://github.com/sandeepmistry/arduino-BLEPeripheral/tree/master/examples/serial
 
 Tested using UART console feature in [Adafruit Bluefruit LE Connect](https://apps.apple.com/at/app/adafruit-bluefruit-le-connect/id830125974).
+
+The doc for the ESP32 BLE lib is here:
+https://github.com/nkolban/ESP32_BLE_Arduino
+
 */
 
 #pragma once

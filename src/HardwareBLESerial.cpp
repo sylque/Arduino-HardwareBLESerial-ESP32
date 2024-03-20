@@ -18,35 +18,38 @@ bool HardwareBLESerial::beginAndSetupBLE(const char *name) {
 }
 
 void HardwareBLESerial::begin() {
-  // Create the server
-  this->uartServer = BLEDevice::createServer();
-  this->uartServer->setCallbacks(this);
+  if (!this->uartServer) {
+    // Create the server
+    this->uartServer = BLEDevice::createServer();
+    this->uartServer->setCallbacks(this);
 
-  // Create the UART service
-  this->uartService =
-      uartServer->createService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+    // Create the UART service
+    this->uartService =
+        uartServer->createService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
 
-  // Create the RX charac
-  this->receiveCharacteristic =
-      uartService->createCharacteristic("6E400002-B5A3-F393-E0A9-E50E24DCCA9E",
-                                        BLECharacteristic::PROPERTY_WRITE_NR);
-  receiveCharacteristic->setCallbacks(this);
+    // Create the RX charac
+    this->receiveCharacteristic = uartService->createCharacteristic(
+        "6E400002-B5A3-F393-E0A9-E50E24DCCA9E",
+        BLECharacteristic::PROPERTY_WRITE_NR);
+    receiveCharacteristic->setCallbacks(this);
 
-  // Create the TX charac. IMPORTANT: it should have the BLE2902 descriptor
-  this->transmitCharacteristic =
-      uartService->createCharacteristic("6E400003-B5A3-F393-E0A9-E50E24DCCA9E",
-                                        BLECharacteristic::PROPERTY_NOTIFY);
-  static BLE2902 s_ble2902;
-  this->transmitCharacteristic->addDescriptor(&s_ble2902);
+    // Create the TX charac. IMPORTANT: it should have the BLE2902 descriptor
+    this->transmitCharacteristic = uartService->createCharacteristic(
+        "6E400003-B5A3-F393-E0A9-E50E24DCCA9E",
+        BLECharacteristic::PROPERTY_NOTIFY);
+    static BLE2902 s_ble2902;
+    this->transmitCharacteristic->addDescriptor(&s_ble2902);
+
+    // Advertise. IMPORTANT: advertizing the Uart service is required for
+    // the Bluefruit Connect app to list the device as "Uart capable" (notice
+    // that advertizing the Uart service is *not* required for the app to be
+    // able to connect to the device and use all Uart features)
+    BLEDevice::getAdvertising()->addServiceUUID(this->uartService->getUUID());
+  }
 
   // Start the service
   this->uartService->start();
 
-  // Advertise. IMPORTANT: also advertizing the Uart service is required for the
-  // Bluefruit Connect app to list the device as "Uart capable" (notice that
-  // advertizing the Uart service is *not* required for the app to be able to
-  // connect to the device and use all Uart features)
-  BLEDevice::getAdvertising()->addServiceUUID(this->uartService->getUUID());
   BLEDevice::startAdvertising();
 }
 
@@ -59,22 +62,24 @@ void HardwareBLESerial::poll() {
 }
 
 void HardwareBLESerial::end() {
-  if (this->receiveCharacteristic) {
-    this->receiveCharacteristic->setCallbacks(nullptr);
-  }
   flush();
   this->receiveBuffer.clear();
-  delete uartServer;
-  uartServer = nullptr;
+
+  // The ESP32 BLE library doesn't seem to support deletion of objects. All we
+  // can do is to stop the service.
   if (uartService) {
     uartService->stop();
-  }  
-  delete uartService;
-  uartService = nullptr;
-  delete receiveCharacteristic;
-  receiveCharacteristic = nullptr;
-  delete transmitCharacteristic;
-  transmitCharacteristic = nullptr;
+  }
+  BLEDevice::stopAdvertising();
+
+  // delete uartServer;
+  // uartServer = nullptr;
+  // delete uartService;
+  // uartService = nullptr;
+  // delete receiveCharacteristic;
+  // receiveCharacteristic = nullptr;
+  // delete transmitCharacteristic;
+  // transmitCharacteristic = nullptr;
 }
 
 size_t HardwareBLESerial::available() {
@@ -89,7 +94,7 @@ int HardwareBLESerial::peek() {
 int HardwareBLESerial::read() {
   int result = this->receiveBuffer.pop();
   if (result == (int)'\n') {
-    this->numAvailableLines --;
+    this->numAvailableLines--;
   }
   return result;
 }
@@ -99,7 +104,7 @@ size_t HardwareBLESerial::write(uint8_t byte) {
   //   return 0;
   // }
   this->transmitBuffer[this->transmitBufferLength] = byte;
-  this->transmitBufferLength ++;
+  this->transmitBufferLength++;
   if (this->transmitBufferLength == sizeof(this->transmitBuffer)) {
     flush();
   }
@@ -108,7 +113,8 @@ size_t HardwareBLESerial::write(uint8_t byte) {
 
 void HardwareBLESerial::flush() {
   if (this->transmitBufferLength > 0) {
-    this->transmitCharacteristic->setValue(this->transmitBuffer, this->transmitBufferLength);
+    this->transmitCharacteristic->setValue(this->transmitBuffer,
+                                           this->transmitBufferLength);
     this->transmitBufferLength = 0;
     this->transmitCharacteristic->notify();
   }
@@ -116,9 +122,7 @@ void HardwareBLESerial::flush() {
   // BLE.poll();
 }
 
-size_t HardwareBLESerial::availableLines() {
-  return this->numAvailableLines;
-}
+size_t HardwareBLESerial::availableLines() { return this->numAvailableLines; }
 
 size_t HardwareBLESerial::peekLine(char *buffer, size_t bufferSize) {
   if (this->availableLines() == 0) {
@@ -126,7 +130,7 @@ size_t HardwareBLESerial::peekLine(char *buffer, size_t bufferSize) {
     return 0;
   }
   size_t i = 0;
-  for (; i < bufferSize - 1; i ++) {
+  for (; i < bufferSize - 1; i++) {
     int chr = this->receiveBuffer.get(i);
     if (chr == -1 || chr == '\n') {
       break;
@@ -144,7 +148,7 @@ size_t HardwareBLESerial::readLine(char *buffer, size_t bufferSize) {
     return 0;
   }
   size_t i = 0;
-  for (; i < bufferSize - 1; i ++) {
+  for (; i < bufferSize - 1; i++) {
     int chr = this->read();
     if (chr == -1 || chr == '\n') {
       break;
@@ -161,52 +165,69 @@ size_t HardwareBLESerial::print(const char *str) {
   //   return 0;
   // }
   size_t written = 0;
-  for (size_t i = 0; str[i] != '\0'; i ++) {
+  for (size_t i = 0; str[i] != '\0'; i++) {
     written += this->write(str[i]);
   }
   return written;
 }
-size_t HardwareBLESerial::println(const char *str) { return this->print(str) + this->write('\n'); }
+size_t HardwareBLESerial::println(const char *str) {
+  return this->print(str) + this->write('\n');
+}
 
 size_t HardwareBLESerial::print(char value) {
-  char buf[2] = { value, '\0' };
+  char buf[2] = {value, '\0'};
   return this->print(buf);
 }
-size_t HardwareBLESerial::println(char value) { return this->print(value) + this->write('\n'); }
+size_t HardwareBLESerial::println(char value) {
+  return this->print(value) + this->write('\n');
+}
 
 size_t HardwareBLESerial::print(int64_t value) {
-  char buf[21]; snprintf(buf, 21, "%lld", value); // the longest representation of a uint64_t is for -2^63, 20 characters plus null terminator
+  char buf[21];
+  snprintf(buf, 21, "%lld",
+           value);  // the longest representation of a uint64_t is for -2^63, 20
+                    // characters plus null terminator
   return this->print(buf);
 }
-size_t HardwareBLESerial::println(int64_t value) { return this->print(value) + this->write('\n'); }
+size_t HardwareBLESerial::println(int64_t value) {
+  return this->print(value) + this->write('\n');
+}
 
 size_t HardwareBLESerial::print(uint64_t value) {
-  char buf[21]; snprintf(buf, 21, "%llu", value);  // the longest representation of a uint64_t is for 2^64-1, 20 characters plus null terminator
+  char buf[21];
+  snprintf(buf, 21, "%llu",
+           value);  // the longest representation of a uint64_t is for 2^64-1,
+                    // 20 characters plus null terminator
   return this->print(buf);
 }
-size_t HardwareBLESerial::println(uint64_t value) { return this->print(value) + this->write('\n'); }
+size_t HardwareBLESerial::println(uint64_t value) {
+  return this->print(value) + this->write('\n');
+}
 
 size_t HardwareBLESerial::print(double value) {
-  char buf[319]; snprintf(buf, 319, "%f", value); // the longest representation of a double is for -1e308, 318 characters plus null terminator
+  char buf[319];
+  snprintf(buf, 319, "%f",
+           value);  // the longest representation of a double is for -1e308, 318
+                    // characters plus null terminator
   return this->print(buf);
 }
-size_t HardwareBLESerial::println(double value) { return this->print(value) + this->write('\n'); }
-
-bool HardwareBLESerial::availableCmds() {
-  return this->peek() == '!';
+size_t HardwareBLESerial::println(double value) {
+  return this->print(value) + this->write('\n');
 }
+
+bool HardwareBLESerial::availableCmds() { return this->peek() == '!'; }
 
 // Returns an empty string if error
 std::string HardwareBLESerial::readCmd() {
   if (!this->availableCmds()) {
     return "";
   }
-  
+
   char buf[30];
 
   // Get the command start character
   buf[0] = this->read();
-  
+
   // Get the command character
   buf[1] = this->read();
 
@@ -234,7 +255,7 @@ std::string HardwareBLESerial::readCmd() {
     default:
       return "";
   }
-  
+
   // Read the payload and the CRC
   for (int i = 0; i < payloadSize + 1; ++i) {
     buf[i + 2] = this->read();
@@ -257,11 +278,11 @@ HardwareBLESerial::operator bool() {
   return this->uartServer ? this->uartServer->getConnectedCount() > 0 : false;
 }
 
-void HardwareBLESerial::onReceive(const uint8_t* data, size_t size) {
+void HardwareBLESerial::onReceive(const uint8_t *data, size_t size) {
   for (size_t i = 0; i < min(size, sizeof(this->receiveBuffer)); i++) {
     this->receiveBuffer.add(data[i]);
     if (data[i] == '\n') {
-      this->numAvailableLines ++;
+      this->numAvailableLines++;
     }
   }
 }
